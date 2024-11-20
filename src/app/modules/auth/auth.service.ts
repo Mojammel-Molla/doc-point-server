@@ -1,7 +1,8 @@
 import bcrypt from 'bcrypt';
 import { prisma } from '../../shared/prisma';
-import jwt, { JwtPayload } from 'jsonwebtoken';
+import jwt, { JwtPayload, Secret } from 'jsonwebtoken';
 import { createToken } from '../../helpers/createToken';
+import config from '../../../config';
 
 type ILogin = { email: string; password: string };
 
@@ -12,24 +13,35 @@ const logInUser = async (payload: ILogin) => {
     },
   });
 
-  if (!user || !(await bcrypt.compare(payload.password, user.password))) {
-    throw new Error('Invalid credentials');
+  if (!user) {
+    throw new Error('User not found');
   }
+
+  const isPasswordMatch = await bcrypt.compare(payload.password, user.password);
+  if (!isPasswordMatch) {
+    throw new Error('Incorrect password');
+  }
+
+  if (!config.jwt.access_secret || !config.jwt.refresh_token_secret) {
+    throw new Error('Missing JWT configuration');
+  }
+
   const accessToken = createToken(
     {
       email: user.email,
       role: user.role,
     },
-    'abcdefg',
-    '5m'
+    config.jwt.access_secret as string,
+    config.jwt.access_expires_in as string
   );
+
   const refreshToken = createToken(
     {
       email: user.email,
       role: user.role,
     },
-    'abcdefghijklmnopqrstuvwxyz',
-    '30d'
+    config.jwt.refresh_token_secret as string,
+    config.jwt.refresh_token_expires_in as string
   );
 
   return {
@@ -43,7 +55,10 @@ const refreshTokenCreate = async (token: string) => {
   console.log('Refreshing', token);
   let decodedData;
   try {
-    decodedData = jwt.verify(token, 'abcdefghijklmnopqrstuvwxyz') as JwtPayload;
+    decodedData = jwt.verify(
+      token,
+      config.jwt.refresh_token_secret as string
+    ) as JwtPayload;
   } catch (error) {
     throw new Error('Invalid token');
   }
@@ -57,8 +72,8 @@ const refreshTokenCreate = async (token: string) => {
       email: user.email,
       role: user.role,
     },
-    'abcdefg',
-    '5m'
+    config.jwt.refresh_token_secret as string,
+    config.jwt.refresh_token_expires_in as string
   );
 
   return {
