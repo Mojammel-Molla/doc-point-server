@@ -1,4 +1,4 @@
-import { Admin, Prisma, UserStstus } from '@prisma/client';
+import { Admin, Prisma, UserStatus } from '@prisma/client';
 import { adminSearchableFields } from './admin.constant';
 import { calculatePagination } from '../../helpers/pagination.helper';
 import { prisma } from '../../shared/prisma';
@@ -58,6 +58,7 @@ const getAllFromDB = async (
     data: result,
   };
 };
+
 const getByIdFromDB = async (id: string) => {
   console.log(id);
 
@@ -130,7 +131,7 @@ const softDeleteFromDB = async (id: string): Promise<Admin | null> => {
         email: adminDeletedData.email,
       },
       data: {
-        status: UserStstus.DELETED,
+        status: UserStatus.DELETED,
       },
     });
     return adminDeletedData;
