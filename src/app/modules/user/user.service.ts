@@ -1,4 +1,11 @@
-import { Admin, Doctor, Prisma, UserRole } from '@prisma/client';
+import {
+  Admin,
+  Doctor,
+  Patient,
+  Prisma,
+  UserRole,
+  UserStatus,
+} from '@prisma/client';
 import bcrypt from 'bcrypt';
 import { prisma } from '../../shared/prisma';
 import { Request } from 'express';
@@ -6,6 +13,7 @@ import { IFile } from '../../interfaces/file';
 import { fileUploader } from '../../helpers/fileUploader';
 import { calculatePagination } from '../../helpers/pagination.helper';
 import { userSearchableFields } from './user.constant';
+import { IAuthUser } from '../../interfaces/common';
 
 const createAdminIntoDB = async (req: Request): Promise<Admin> => {
   const file = req.file as IFile;
@@ -59,6 +67,37 @@ const createDoctorIntoDB = async (req: Request): Promise<Doctor> => {
       data: req.body.doctor,
     });
     return createdDoctorData;
+  });
+
+  return result;
+};
+
+const createPatientIntoDB = async (req: Request): Promise<Patient> => {
+  const file = req.file as IFile;
+
+  if (file) {
+    const uploadedProfileImage = await fileUploader.uploadToCloudinary(file);
+    req.body.patient.profilePhoto = uploadedProfileImage?.secure_url;
+  }
+
+  const hashedPassword: string = await bcrypt.hash(req.body.password, 12);
+
+  const userData = {
+    email: req.body.patient.email,
+    password: hashedPassword,
+    role: UserRole.PATIENT,
+  };
+
+  const result = await prisma.$transaction(async transactionClient => {
+    await transactionClient.user.create({
+      data: userData,
+    });
+
+    const createdPatientData = await transactionClient.patient.create({
+      data: req.body.patient,
+    });
+
+    return createdPatientData;
   });
 
   return result;
@@ -146,9 +185,67 @@ const updateUserStatusIntoDB = async (id: string, status: UserRole) => {
   return updateUserStatus;
 };
 
+const getMyProfileFromDB = async (user: IAuthUser) => {
+  const userInfo = await prisma.user.findFirstOrThrow({
+    where: {
+      email: user.email,
+    },
+  });
+  let profileInfo;
+  if (userInfo.role === UserRole.ADMIN) {
+    profileInfo = await prisma.admin.findFirstOrThrow({
+      where: {
+        email: userInfo.email,
+      },
+    });
+  }
+  return { ...userInfo, ...profileInfo };
+};
+const updateMyProfileIntoDB = async (user: IAuthUser, req: Request) => {
+  const userInfo = await prisma.user.findFirstOrThrow({
+    where: {
+      email: user?.email,
+      status: UserStatus.ACTIVE,
+    },
+  });
+
+  if (req.file) {
+    const file = req.file as IFile;
+    const uploadToCloudinary = await fileUploader.uploadToCloudinary(file);
+    req.body.profilePhoto = uploadToCloudinary?.secure_url;
+  }
+
+  let profileInfo;
+  if (userInfo.role === UserRole.ADMIN) {
+    profileInfo = await prisma.admin.update({
+      where: {
+        email: userInfo.email,
+      },
+      data: req.body,
+    });
+  } else if (userInfo.role === UserRole.DOCTOR) {
+    profileInfo = await prisma.doctor.update({
+      where: {
+        email: userInfo.email,
+      },
+      data: req.body,
+    });
+  } else if (userInfo.role === UserRole.PATIENT) {
+    profileInfo = await prisma.patient.update({
+      where: {
+        email: userInfo.email,
+      },
+      data: req.body,
+    });
+  }
+  return { ...profileInfo };
+};
 export const userServices = {
   createAdminIntoDB,
   createDoctorIntoDB,
+  createPatientIntoDB,
   getAllUsersFromDB,
   updateUserStatusIntoDB,
+  getMyProfileFromDB,
+  updateMyProfileIntoDB,
 };
